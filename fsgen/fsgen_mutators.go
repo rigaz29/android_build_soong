@@ -447,14 +447,30 @@ func collectDepsMutator(mctx android.BottomUpMutatorContext) {
 
 	if _, ok := fsGenState.depCandidatesMap[moduleName]; ok {
 		installPartition := m.PartitionTag(mctx.DeviceConfig())
-		systemPartitionFalsePositive := installPartition == "system" && android.InList(m.ImageVariation().Variation, []string{
+		systemPartitionFalsePositive := installPartition == "system" && (android.InList(m.ImageVariation().Variation, []string{
 			// cc/image.go marks some ramdisk and recovery modules as platform.
 			// https://cs.android.com/android/platform/superproject/main/+/main:build/soong/cc/image.go;l=514-522?q=MakeAsPlatform%20f:build%2Fsoong&ss=android%2Fplatform%2Fsuperproject%2Fmain
 			// Skip them in fsgen.
 			android.RamdiskVariation,
 			android.VendorRamdiskVariation,
 			android.RecoveryVariation,
-		})
+		}) ||
+			// Non-Treble devices have no vendor partition: TARGET_COPY_OUT_VENDOR is
+			// "system/vendor", so PartitionTag() reports "system" for vendor-variant
+			// modules. Those modules only ever build a vendor variant, so adding them
+			// to the system image deps asks for a platform variant that cannot exist:
+			//
+			//   dependency "libstdc++_vendor" of "<product>_generated_system_image"
+			//     missing variant: os:android,arch:arm_armv8-a_cortex-a53
+			//   available variants:
+			//     os:android,image:vendor,arch:arm_armv8-a_cortex-a53,link:shared
+			//
+			// Make installs them under system/vendor on its own, so skipping them
+			// here is safe. The same VendorPath() test is used by
+			// filesystem_creator.go to tell a real vendor partition from an
+			// in-system one.
+			(m.ImageVariation().Variation == android.VendorVariation &&
+				mctx.DeviceConfig().VendorPath() != "vendor"))
 		if isEligibleForFsDeps(mctx) && !systemPartitionFalsePositive {
 			appendDepIfAppropriate(mctx, fsGenState.fsDeps[installPartition], installPartition, android.NativeBridgeDisabled, mctx.ModuleName())
 		}
