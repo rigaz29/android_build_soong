@@ -215,6 +215,23 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
 
 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
 	invocationEnv := make(map[string]string)
+	// soong_build dijalankan lewat `cd / && env -i "$BUILDER"`, sehingga
+	// GOMEMLIMIT dari lingkungan luar TIDAK PERNAH sampai kepadanya. Tanpa ini,
+	// menyetel SOONG_GOMEMLIMIT di shell tidak berpengaruh sama sekali.
+	//
+	// Di mesin 11 GB, analisis soong untuk A37 memuncak melewati RAM yang ada
+	// dan dibunuh OOM killer setelah 33 menit:
+	//
+	//   stderr: Killed
+	//   1 steps failed: exit=137 # signal:killed
+	//
+	// Go dengan GOGC=100 default membiarkan heap tumbuh 2x live heap sebelum
+	// GC; GOMEMLIMIT menekan puncaknya tanpa mengurangi kerja yang dilakukan.
+	// Swap tidak menolong karena Go tidak memperlakukan swap sebagai tekanan
+	// memori -- heap justru tumbuh selama masih ada tempat.
+	if v := os.Getenv("SOONG_GOMEMLIMIT"); v != "" {
+		invocationEnv["GOMEMLIMIT"] = v
+	}
 	if pb.debugPort != "" {
 		//debug mode
 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,
