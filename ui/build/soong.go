@@ -229,6 +229,26 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
 	// GC; GOMEMLIMIT menekan puncaknya tanpa mengurangi kerja yang dilakukan.
 	// Swap tidak menolong karena Go tidak memperlakukan swap sebagai tekanan
 	// memori -- heap justru tumbuh selama masih ada tempat.
+	//
+	// PERINGATAN, nilainya punya dua jurang, bukan satu. Menyetelnya terlalu
+	// RENDAH lebih buruk daripada tidak menyetelnya. Bila live heap melebihi
+	// batas, Go tidak bisa pernah memenuhinya, sehingga GC berjalan tanpa henti
+	// dan tiap siklus memindai seluruh heap -- yang saat itu ada di swap.
+	// Dengan 5GiB di mesin 11 GB, gejalanya terukur begini:
+	//
+	//   soong_build 45 menit tanpa satu pun berkas keluaran baru
+	//   998.888 major page fault per 20 detik
+	//   4,06 GB dibaca per 20 detik, 0 byte ditulis, total 395 GB
+	//   RSS tetap 10,4 GB, tidak pernah turun ke batas
+	//
+	// Build itu tidak akan pernah selesai. Diamnya menipu: soong memang tidak
+	// mencetak apa pun selama analisis, jadi spiral ini tampak persis seperti
+	// analisis yang lambat.
+	//
+	// Karena RSS tidak pernah turun di bawah 10,4 GB meski GC terus berjalan,
+	// live heap analisis A37 ada di atas 5GiB, kira-kira 9 GB. Nilainya harus
+	// di ATAS itu supaya GC kembali sesekali, dan cukup di bawah RAM+swap
+	// supaya tidak kena OOM. 14GiB memenuhi keduanya di mesin ini.
 	if v := os.Getenv("SOONG_GOMEMLIMIT"); v != "" {
 		invocationEnv["GOMEMLIMIT"] = v
 	}
