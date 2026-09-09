@@ -252,6 +252,20 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
 	if v := os.Getenv("SOONG_GOMEMLIMIT"); v != "" {
 		invocationEnv["GOMEMLIMIT"] = v
 	}
+	// Diteruskan dengan alasan yang sama seperti GOMEMLIMIT: env -i memutus
+	// semuanya. SOONG_GODEBUG=gctrace=1 membuat runtime Go mencetak satu baris
+	// per siklus GC ke stderr, dan kolom persentasenya adalah fraksi CPU
+	// kumulatif yang dihabiskan di GC.
+	//
+	// Itu satu-satunya pembeda spiral maut yang tidak ambigu. Analisis soong
+	// diam dan tidak menulis apa pun sampai selesai, jadi baik "lama" maupun
+	// "nol byte ditulis" sama-sama menggambarkan analisis sehat di mesin
+	// lambat -- dua heuristik itu sudah terbukti membunuh build yang sehat.
+	// Fraksi GC tidak: analisis sehat tinggal di satu digit, spiral memanjat
+	// ke puluhan persen dan tidak pernah turun.
+	if v := os.Getenv("SOONG_GODEBUG"); v != "" {
+		invocationEnv["GODEBUG"] = v
+	}
 	if pb.debugPort != "" {
 		//debug mode
 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,
